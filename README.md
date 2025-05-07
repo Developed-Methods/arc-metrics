@@ -1,9 +1,9 @@
 ## arc-metrics
 
 #### Why does this exist?
-A lot of data structures & algorithms I write greatly benifit from having counters and gauges for
+A lot of data structures & algorithms I write greatly benefit from having counters and gauges for
 monitoring and testing assumption in production. Sometimes there's multiple instances and things
-get hard when libraries register metrics to a global state. This library tries to make it easy
+get harder when libraries register metrics to a global state. This library tries to make it easy
 to create a default Metrics structure which application can register for monitoring however they
 want.
 
