@@ -188,7 +188,7 @@ impl Display for PromMetricRegistry {
                     }
                 }
                 else if i + 1 == end {
-                    write!(f, "{}=\"{}\"}}", key, value)?;
+                    write!(f, ",{}=\"{}\"}}", key, value)?;
                 }
                 else {
                     write!(f, ",{}=\"{}\"", key, value)?;
@@ -376,6 +376,7 @@ mod test {
     fn metrics_test() {
         let met = Arc::new(Met::default());
         let mut reg = PromMetricRegistry::new();
+        reg.base_attributes.push(["prefix".into(), "set".into()]);
 
         reg.register_fn(&met, |m, reg| {
             reg.name_prefix("base_prefix");
