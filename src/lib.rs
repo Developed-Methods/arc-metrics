@@ -67,6 +67,18 @@ impl IntCounter {
     pub fn shared_inc_by(&self, amount: u64) {
         self.0.fetch_add(amount, Ordering::AcqRel);
     }
+
+    pub fn load(&self) -> u64 {
+        self.shared_load()
+    }
+
+    pub fn shared_load(&self) -> u64 {
+        self.0.load(Ordering::Acquire)
+    }
+
+    pub fn owned_load(&self) -> u64 {
+        self.0.load(Ordering::Relaxed)
+    }
 }
 
 impl IntGauge {
@@ -108,6 +120,18 @@ impl IntGauge {
 
     pub fn shared_inc_by(&self, amount: u64) {
         self.0.fetch_add(amount, Ordering::AcqRel);
+    }
+
+    pub fn load(&self) -> u64 {
+        self.shared_load()
+    }
+
+    pub fn shared_load(&self) -> u64 {
+        self.0.load(Ordering::Acquire)
+    }
+
+    pub fn owned_load(&self) -> u64 {
+        self.0.load(Ordering::Relaxed)
     }
 }
 
