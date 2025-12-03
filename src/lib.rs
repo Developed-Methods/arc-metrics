@@ -12,10 +12,10 @@ use std::{
 use helpers::RegisterableMetric;
 
 #[derive(Default, Debug)]
-pub struct IntCounter(AtomicU64);
+pub struct IntCounter(pub AtomicU64);
 
 #[derive(Default, Debug)]
-pub struct IntGauge(AtomicU64);
+pub struct IntGauge(pub AtomicU64);
 
 pub mod helpers;
 
