@@ -1,4 +1,13 @@
-use std::{any::Any, borrow::Cow, fmt::Display, ops::Deref, sync::{atomic::{AtomicU64, Ordering}, Arc}};
+use std::{
+    any::Any,
+    borrow::Cow,
+    fmt::Display,
+    ops::Deref,
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        Arc,
+    },
+};
 
 use helpers::RegisterableMetric;
 
@@ -147,7 +156,10 @@ impl Default for PromMetricRegistry {
         let base_attributes = if let Some(details) = pkg_details::try_get() {
             vec![
                 [Cow::Borrowed("program"), Cow::Borrowed(details.pkg_name)],
-                [Cow::Borrowed("pkg_version"), Cow::Borrowed(details.pkg_version)],
+                [
+                    Cow::Borrowed("pkg_version"),
+                    Cow::Borrowed(details.pkg_version),
+                ],
             ]
         } else {
             Vec::new()
@@ -169,6 +181,7 @@ struct RegisteredMetric {
     name: Cow<'static, str>,
     value: &'static AtomicU64,
     attributes: Vec<[Cow<'static, str>; 2]>,
+    skip_zero: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -197,11 +210,16 @@ impl Display for PromMetricRegistry {
                 false
             };
 
+            if metric.skip_zero && metric.value.load(Ordering::Relaxed) == 0 {
+                continue;
+            }
+
             if !matches {
                 writeln!(f, "# HELP {}", metric.name)?;
                 writeln!(f, "# TYPE {} {}", metric.name, metric.metric_type)?;
                 last = Some((metric.name.clone(), metric.metric_type));
             }
+
             write!(f, "{}", metric.name)?;
             let end = metric.attributes.len();
             for (i, [key, value]) in metric.attributes.iter().enumerate() {
@@ -210,15 +228,13 @@ impl Display for PromMetricRegistry {
                     if end == 1 {
                         write!(f, "}}")?;
                     }
-                }
-                else if i + 1 == end {
+                } else if i + 1 == end {
                     write!(f, ",{}=\"{}\"}}", key, value)?;
-                }
-                else {
+                } else {
                     write!(f, ",{}=\"{}\"", key, value)?;
                 }
             }
-            
+
             writeln!(f, " {}", metric.value.load(Ordering::Relaxed))?;
         }
 
@@ -237,9 +253,14 @@ impl PromMetricRegistry {
         });
     }
 
-    pub fn register_fn<'a, T: 'static>(&'a mut self, metrics: &Arc<T>, register: impl FnOnce(&'static T, &mut RegisterAction<'a>)) {
+    pub fn register_fn<'a, T: 'static>(
+        &'a mut self,
+        metrics: &Arc<T>,
+        register: impl FnOnce(&'static T, &mut RegisterAction<'a>),
+    ) {
         /* allows us to keep static references as we own an Arc copy */
-        self.metric_holders.push(Arc::clone(metrics) as Arc<dyn Any>);
+        self.metric_holders
+            .push(Arc::clone(metrics) as Arc<dyn Any>);
 
         let mut action = RegisterAction {
             name_prefix: None,
@@ -259,7 +280,7 @@ pub struct RegisterAction<'a> {
 }
 
 impl RegisterAction<'_> {
-    pub fn child(&mut self) -> RegisterAction {
+    pub fn child(&mut self) -> RegisterAction<'_> {
         RegisterAction {
             metrics: self.metrics,
             name_prefix: self.name_prefix.clone(),
@@ -272,36 +293,53 @@ impl RegisterAction<'_> {
         self
     }
 
-    pub fn base_attr<K: Into<Cow<'static, str>>, V: Into<Cow<'static, str>>>(&mut self, key: K, value: V) -> &mut Self {
+    pub fn base_attr<K: Into<Cow<'static, str>>, V: Into<Cow<'static, str>>>(
+        &mut self,
+        key: K,
+        value: V,
+    ) -> &mut Self {
         let key = key.into();
         let value = value.into();
         self.base_attributes.push([key, value]);
         self
     }
 
-    pub fn count<N: Into<Cow<'static, str>>>(&mut self, name: N, count: &'static IntCounter) -> RegisterHelper {
+    pub fn count<N: Into<Cow<'static, str>>>(
+        &mut self,
+        name: N,
+        count: &'static IntCounter,
+    ) -> RegisterHelper<'_> {
         self.metric(name, &count.0, MetricType::IntCounter)
     }
 
-    pub fn gauge<N: Into<Cow<'static, str>>>(&mut self, name: N, gauge: &'static IntGauge) -> RegisterHelper {
+    pub fn gauge<N: Into<Cow<'static, str>>>(
+        &mut self,
+        name: N,
+        gauge: &'static IntGauge,
+    ) -> RegisterHelper<'_> {
         self.metric(name, &gauge.0, MetricType::IntGauge)
     }
 
-    fn metric<N: Into<Cow<'static, str>>>(&mut self, name: N, value: &'static AtomicU64, metric_type: MetricType) -> RegisterHelper {
+    fn metric<N: Into<Cow<'static, str>>>(
+        &mut self,
+        name: N,
+        value: &'static AtomicU64,
+        metric_type: MetricType,
+    ) -> RegisterHelper<'_> {
         let mut helper = self.empty();
         helper.metric(name, value, metric_type);
         helper
     }
 
-    pub fn group<N: Into<Cow<'static, str>>>(&mut self, prefix: N) -> RegisterHelper {
+    pub fn group<N: Into<Cow<'static, str>>>(&mut self, prefix: N) -> RegisterHelper<'_> {
         self.start(Some(prefix))
     }
 
-    pub fn empty(&mut self) -> RegisterHelper {
+    pub fn empty(&mut self) -> RegisterHelper<'_> {
         self.start::<String>(None)
     }
 
-    fn start<N: Into<Cow<'static, str>>>(&mut self, prefix: Option<N>) -> RegisterHelper {
+    fn start<N: Into<Cow<'static, str>>>(&mut self, prefix: Option<N>) -> RegisterHelper<'_> {
         let attributes = self.base_attributes.clone();
 
         let name_prefix = match (&self.name_prefix, prefix) {
@@ -331,22 +369,49 @@ pub struct RegisterHelper<'a> {
 }
 
 impl RegisterHelper<'_> {
-    pub fn attr<K: Into<Cow<'static, str>>, V: Into<Cow<'static, str>>>(&mut self, key: K, value: V) -> &mut Self {
+    pub fn attr<K: Into<Cow<'static, str>>, V: Into<Cow<'static, str>>>(
+        &mut self,
+        key: K,
+        value: V,
+    ) -> &mut Self {
         let key = key.into();
         let value = value.into();
         self.attributes.push([key, value]);
         self
     }
 
-    pub fn count<N: Into<Cow<'static, str>>>(&mut self, name: N, count: &'static IntCounter) -> &mut Self {
+    pub fn count<N: Into<Cow<'static, str>>>(
+        &mut self,
+        name: N,
+        count: &'static IntCounter,
+    ) -> &mut Self {
         self.metric(name, &count.0, MetricType::IntCounter)
     }
 
-    pub fn gauge<N: Into<Cow<'static, str>>>(&mut self, name: N, gauge: &'static IntGauge) -> &mut Self {
+    pub fn gauge<N: Into<Cow<'static, str>>>(
+        &mut self,
+        name: N,
+        gauge: &'static IntGauge,
+    ) -> &mut Self {
         self.metric(name, &gauge.0, MetricType::IntGauge)
     }
 
-    pub fn metric<N: Into<Cow<'static, str>>>(&mut self, name: N, value: &'static AtomicU64, metric_type: MetricType) -> &mut Self {
+    pub fn metric<N: Into<Cow<'static, str>>>(
+        &mut self,
+        name: N,
+        value: &'static AtomicU64,
+        metric_type: MetricType,
+    ) -> &mut Self {
+        self.metric_opt(name, value, metric_type, false)
+    }
+
+    pub fn metric_opt<N: Into<Cow<'static, str>>>(
+        &mut self,
+        name: N,
+        value: &'static AtomicU64,
+        metric_type: MetricType,
+        skip_zero: bool,
+    ) -> &mut Self {
         let name = match &self.name_prefix {
             Some(prefix) => Cow::Owned(format!("{}_{}", prefix, name.into())),
             None => name.into(),
@@ -357,6 +422,7 @@ impl RegisterHelper<'_> {
             name,
             value,
             attributes: Vec::new(),
+            skip_zero,
         });
 
         self
@@ -382,7 +448,6 @@ struct SortKey {
     metric: MetricType,
 }
 
-
 #[cfg(test)]
 mod test {
     use std::sync::Arc;
@@ -407,13 +472,15 @@ mod test {
 
             reg.group("prefix")
                 .count("a", &m.a)
-                .count("b", &m.b)
+                .metric_opt("b", &m.b.0, crate::MetricType::IntCounter, true)
                 .attr("test", "2");
 
             reg.gauge("c", &m.c);
         });
 
         println!("{}", reg);
+
+        met.b.inc();
+        println!("{}", reg);
     }
 }
-

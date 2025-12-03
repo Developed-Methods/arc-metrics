@@ -60,7 +60,6 @@ impl<M> Drop for DurationIncUs<M> {
     }
 }
 
-
 pub trait RegisterableMetric: 'static {
     fn register(&'static self, register: &mut RegisterAction);
 }
@@ -69,7 +68,5 @@ pub trait RegisterableMetric: 'static {
 pub struct NoMetrics;
 
 impl RegisterableMetric for NoMetrics {
-    fn register(&'static self, _register: &mut RegisterAction) {
-    }
+    fn register(&'static self, _register: &mut RegisterAction) {}
 }
-

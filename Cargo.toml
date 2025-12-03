@@ -1,6 +1,6 @@
 [package]
 name = "arc-metrics"
-version = "0.1.2"
+version = "0.1.3"
 edition = "2021"
 description = "Composable metrics, application manually registers them"
 repository = "https://github.com/Developed-Methods/arc-metrics"
